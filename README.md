@@ -13,7 +13,7 @@ Inspired by the paper
 * [SwarmTouch: Tactile Interaction of Human with Impedance Controlled Swarm of Nano-Quadrotors](https://arxiv.org/abs/1909.03491)
 
 ### Brief repository overview
-The project is a Unity application that uses [ML agents
+The project is a Unity 2019.4.15f1 application that uses [ML agents
 toolkit](https://github.com/Unity-Technologies/ml-agents) for creating a
 playground filled with robots in control of Artificial Intelligence (we
 experiment with Reinforcement Learning and other approaches)
