@@ -1,94 +1,140 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
+using Random=UnityEngine.Random;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 
 
 public class MoveToGoalAgent : Agent
-{
-    public float speed = 100;
-    public Transform Target;
-    public Transform[] obs;
-    public float forceMultiplier = 1f;
-    [SerializeField] private Material win;
-    [SerializeField] private Material lose;
+{    
+    [SerializeField] private GameObject target;
+    [SerializeField] private GameObject obstacle;
+    [SerializeField] private int nObstacles;
+    [SerializeField] private Material winMaterial;
+    [SerializeField] private Material loseMaterial;
     [SerializeField] private MeshRenderer floor;
-    Vector3 goalPosition;
+    private bool isHeuristic = false;
+    private List<GameObject> obstaclesList;
+    private int fieldSideLength = 6; // TODO: Deduct it with the field scale
     private int counter = 0;
     private float time = 0;
-    
+    private float forceMultiplier = 1f;
+    private Rigidbody rBody;
 
-    Rigidbody rBody;
     void Start()
     {
         rBody = GetComponent<Rigidbody>();
     }
 
+    // TODO: Make it nicer
+    private List<int> RandomSamples(int n, int max)
+    {
+        List<int> samples = new List<int>();
+        for (int i = 0; i < max; i++) {
+            samples.Add(i);
+        }
+        return samples.OrderBy(x => Random.value).ToList().GetRange(0, n);
+    }
+
+    private void AddObstacle(Vector3 position)
+    {
+        GameObject newObstacle = Instantiate(obstacle)  as GameObject;
+        newObstacle.transform.parent = obstacle.transform.parent;
+        newObstacle.transform.localPosition = position;
+        newObstacle.SetActive(true);
+        obstaclesList.Add(newObstacle);
+    }
+
+    private Vector3 PositionIdToVector(int id, int length) {
+        int z = Math.DivRem(id, length, out int x);
+        Vector3 position = new Vector3(x, 0, z);
+        return position;
+    }
+
     public override void OnEpisodeBegin()
     {
-            time = 0;
-            // If the Agent fell, zero its momentum
-            this.rBody.angularVelocity = Vector3.zero;
-            this.rBody.velocity = Vector3.zero;
-            this.transform.localPosition = new Vector3(0.33f, 0.5f, 2.54f);
-            
+        time = 0;
+        // If the Agent fell, zero its momentum
+        this.rBody.angularVelocity = Vector3.zero;
+        this.rBody.velocity = Vector3.zero;
 
-
-        //Target[0].localPosition = new Vector3(-1.5f, 0.54f, -1.54f);
-        // Move the target to a new spot
-        //So that target and obstacle not collide
-        bool goalspawned = false;
-        while (!goalspawned)
-        {
-            goalPosition = new Vector3(Random.Range(-2.75f, 2.75f),
-                                              0.5f,
-                                               Random.Range(-2.75f, -1f));
-            if ((goalPosition - obs[0].localPosition).magnitude < 1 || (goalPosition - obs[1].localPosition).magnitude < 1 || (goalPosition - obs[2].localPosition).magnitude < 1 || (goalPosition - obs[3].localPosition).magnitude < 1)
+        // Delete previous obstacles, if any
+        if (obstaclesList != null) {
+            foreach (GameObject obstacle in obstaclesList)
             {
-                continue;
-            }
-            else
-            {
-                Target.localPosition = goalPosition;
-                goalspawned = true;
+                Destroy(obstacle);
             }
         }
-        //If to try moving obstacle
-        //obs[0].localPosition = new Vector3(Random.Range(-2.5f, 2.5f), 0.5f, -0.5f);
 
+        // Sample some random positions
+        List<int> positionIdsList = RandomSamples(
+            nObstacles + 2,
+            fieldSideLength * fieldSideLength - 1
+        );
+
+        // Add obstacles
+        obstaclesList = new List<GameObject>();
+        for (int i = 0; i < nObstacles; i++) {
+            AddObstacle(
+                PositionIdToVector(positionIdsList[i], fieldSideLength)
+            );
+        }
+
+        // Position the agent
+        // TODO: Add some randomness within the tile
+        this.transform.localPosition = PositionIdToVector(
+            positionIdsList[positionIdsList.Count - 2], fieldSideLength
+        );
+
+        // Position the target
+        // TODO: Add some randomness within the tile
+        target.transform.localPosition = PositionIdToVector(
+            positionIdsList[positionIdsList.Count - 1], fieldSideLength
+        );
+    }
+
+    private void FinishFailure()
+    {
+        SetReward(-1.0f);
+        floor.material = loseMaterial;
+        EndEpisode();
+        counter++;
+        Debug.Log(counter);
+    }
+
+    private void FinishSuccess()
+    {
+        SetReward(5.0f);
+        floor.material = winMaterial;
+        EndEpisode();
     }
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
-
-
         // Actions, size = 2
+        Debug.Log("In Action");
         Vector3 controlSignal = Vector3.zero;
         controlSignal.x = actionBuffers.ContinuousActions[0];
         controlSignal.y = actionBuffers.ContinuousActions[1];
         controlSignal.z = actionBuffers.ContinuousActions[2];
 
-        //rBody.mass* Physics.gravity.magnitude = hovering case
-        //rBody.mass* Physics.gravity.magnitude + controlSignal.y * forceMultiplier = Thrust case
-
-        rBody.AddForce(controlSignal.x * forceMultiplier, rBody.mass*Physics.gravity.magnitude, controlSignal.z * forceMultiplier,ForceMode.Force);
-
-        // Moving to target
-        //float distanceToTarget = Vector3.Distance(this.transform.localPosition, Target.localPosition);
-        time += Time.deltaTime;
-
-        //Limits of playfield and height
-        if (this.transform.localPosition.x < -2.85f || this.transform.localPosition.x > 2.85f || this.transform.localPosition.z < -2.85f || this.transform.localPosition.z > 2.85f || this.transform.localPosition.y < 0.25f || this.transform.localPosition.y > 2f || time > 60f)
-        {
-            SetReward(-1.0f);
-            floor.material = lose;
-            EndEpisode();
-            counter++;
-            Debug.Log(counter);
-        }
-    } 
+        // For the y-axis:
+        // | Hovering case: rBody.mass * Physics.gravity.magnitude
+        // | Thrust case: controlSignal.y * forceMultiplier + rBody.mass * Physics.gravity.magnitude
+        // TODO: Add a check to deactivate gravity if in mode `Heuristics`
+        Debug.Log(rBody.mass * Physics.gravity.magnitude * (isHeuristic ? 1f : 0f));
+        rBody.AddForce(
+            controlSignal.x * forceMultiplier,
+            controlSignal.y * forceMultiplier
+            + rBody.mass * Physics.gravity.magnitude * (isHeuristic ? 1f : 0f),
+            controlSignal.z * forceMultiplier,
+            ForceMode.Force
+        );
+    }
 
     //rewards
     //We want to add more policy here to fasten the training process
@@ -97,39 +143,45 @@ public class MoveToGoalAgent : Agent
     {
         if (other.gameObject.tag == "Goal")
         {
-            SetReward(5.0f);
-            floor.material = win;
-            EndEpisode();
+            FinishSuccess();
         }
-
-        if (other.gameObject.tag == "Obstacle")
+        else if (
+            other.gameObject.tag == "Obstacle"
+            || other.gameObject.tag == "Boundary"
+            )
         {
-            SetReward(-1.0f);
-            floor.material = lose;
-            EndEpisode();
-            counter++;
-            Debug.Log(counter);
+            FinishFailure();
         }
-
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
+        Debug.Log("In Observation");
         // Target and Agent positions
-        sensor.AddObservation(Target.localPosition);
+        sensor.AddObservation(target.transform.localPosition);
         sensor.AddObservation(this.transform.localPosition);
 
         // Agent velocity
         sensor.AddObservation(rBody.velocity.x);
         sensor.AddObservation(rBody.velocity.y);
         sensor.AddObservation(rBody.velocity.z);
+
+        // Give a reward according to the distance to the target
+        // prevDistance = distance;
+        // distance = Vector3.Distance(
+        //     this.transform.position,
+        //     target.transform.position
+        // );
+        // AddReward((distance - prevDistance) / 100f);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
-        var continuousActionsOut = actionsOut.ContinuousActions;
-        continuousActionsOut[0] = -Input.GetAxis("Horizontal");
-        continuousActionsOut[2] = -Input.GetAxis("Vertical");
+        Debug.Log("In Heuristic");
+        isHeuristic = true;
+        rBody.mass = 0f;
+        ActionSegment<float> continuousActionsOut = actionsOut.ContinuousActions;
+        continuousActionsOut[0] = -Input.GetAxisRaw("Horizontal");
+        continuousActionsOut[2] = -Input.GetAxisRaw("Vertical");
     }
 }
-
