@@ -42,7 +42,7 @@ public class MoveToGoalAgent : Agent
 
     private void AddObstacle(Vector3 position)
     {
-        GameObject newObstacle = Instantiate(obstacle)  as GameObject;
+        GameObject newObstacle = Instantiate(obstacle) as GameObject;
         newObstacle.transform.parent = obstacle.transform.parent;
         newObstacle.transform.localPosition = position;
         newObstacle.SetActive(true);
@@ -141,14 +141,12 @@ public class MoveToGoalAgent : Agent
     //The main reward and failure
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.tag == "Goal")
+        if (other.gameObject.tag == "Target")
         {
             FinishSuccess();
         }
-        else if (
-            other.gameObject.tag == "Obstacle"
-            || other.gameObject.tag == "Boundary"
-            )
+        else if (other.gameObject.tag == "Obstacle"
+                || other.gameObject.tag == "Boundary")
         {
             FinishFailure();
         }
@@ -179,9 +177,22 @@ public class MoveToGoalAgent : Agent
     {
         Debug.Log("In Heuristic");
         isHeuristic = true;
-        rBody.mass = 0f;
         ActionSegment<float> continuousActionsOut = actionsOut.ContinuousActions;
-        continuousActionsOut[0] = -Input.GetAxisRaw("Horizontal");
-        continuousActionsOut[2] = -Input.GetAxisRaw("Vertical");
+        // x/z-axes
+        continuousActionsOut[0] = Input.GetAxisRaw("Horizontal");
+        continuousActionsOut[2] = Input.GetAxisRaw("Vertical");
+        // y-axis
+        if (Input.GetKey(KeyCode.LeftShift))
+        {
+            continuousActionsOut[1] = 1f;
+        }
+        else if (Input.GetKey(KeyCode.LeftControl))
+        {
+            continuousActionsOut[1] = -1f;
+        }
+        else
+        {
+            continuousActionsOut[1] = 0f;
+        }
     }
 }
