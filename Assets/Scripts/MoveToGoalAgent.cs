@@ -17,17 +17,25 @@ public class MoveToGoalAgent : Agent
     [SerializeField] private Material winMaterial;
     [SerializeField] private Material loseMaterial;
     [SerializeField] private MeshRenderer floor;
-    private bool isHeuristic = false;
+    // private bool isHeuristic = false;
     private List<GameObject> obstaclesList;
-    private int fieldSideLength = 6; // TODO: Deduct it with the field scale
+    private int fieldSideLength = 6;
     private int counter = 0;
-    private float time = 0;
     private float forceMultiplier = 1f;
+    private float distance;
+    private float prevDistance;
     private Rigidbody rBody;
 
     void Start()
     {
         rBody = GetComponent<Rigidbody>();
+
+        // Retrieve the field scale
+        // TODO: Check that
+        // GameObject plane = GameObject.Find("Plane");
+        // Transform planeTransform = plane.GetComponent<Transform>();
+        // fieldSideLength = (int) planeTransform.localScale.x;
+        // Debug.Log(fieldSideLength);
     }
 
     // TODO: Make it nicer
@@ -57,7 +65,6 @@ public class MoveToGoalAgent : Agent
 
     public override void OnEpisodeBegin()
     {
-        time = 0;
         // If the Agent fell, zero its momentum
         this.rBody.angularVelocity = Vector3.zero;
         this.rBody.velocity = Vector3.zero;
@@ -95,6 +102,12 @@ public class MoveToGoalAgent : Agent
         target.transform.localPosition = PositionIdToVector(
             positionIdsList[positionIdsList.Count - 1], fieldSideLength
         );
+
+        // Compute the initial distance to the target
+        distance = Vector3.Distance(
+            this.transform.position,
+            target.transform.position
+        );
     }
 
     private void FinishFailure()
@@ -115,8 +128,6 @@ public class MoveToGoalAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
-        // Actions, size = 2
-        Debug.Log("In Action");
         Vector3 controlSignal = Vector3.zero;
         controlSignal.x = actionBuffers.ContinuousActions[0];
         controlSignal.y = actionBuffers.ContinuousActions[1];
@@ -126,11 +137,10 @@ public class MoveToGoalAgent : Agent
         // | Hovering case: rBody.mass * Physics.gravity.magnitude
         // | Thrust case: controlSignal.y * forceMultiplier + rBody.mass * Physics.gravity.magnitude
         // TODO: Add a check to deactivate gravity if in mode `Heuristics`
-        Debug.Log(rBody.mass * Physics.gravity.magnitude * (isHeuristic ? 1f : 0f));
+        // Debug.Log(rBody.mass * Physics.gravity.magnitude);
         rBody.AddForce(
             controlSignal.x * forceMultiplier,
-            controlSignal.y * forceMultiplier
-            + rBody.mass * Physics.gravity.magnitude * (isHeuristic ? 1f : 0f),
+            0, //controlSignal.y * forceMultiplier + rBody.mass * Physics.gravity.magnitude,
             controlSignal.z * forceMultiplier,
             ForceMode.Force
         );
@@ -154,7 +164,6 @@ public class MoveToGoalAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        Debug.Log("In Observation");
         // Target and Agent positions
         sensor.AddObservation(target.transform.localPosition);
         sensor.AddObservation(this.transform.localPosition);
@@ -164,19 +173,25 @@ public class MoveToGoalAgent : Agent
         sensor.AddObservation(rBody.velocity.y);
         sensor.AddObservation(rBody.velocity.z);
 
-        // Give a reward according to the distance to the target
-        // prevDistance = distance;
-        // distance = Vector3.Distance(
-        //     this.transform.position,
-        //     target.transform.position
-        // );
-        // AddReward((distance - prevDistance) / 100f);
+        // Obstacles positions
+        // TODO: Automatically set the observation vector size somewhere
+        // (for now, observation vector size is hardcoded in the editor)
+        foreach (GameObject obstacle in obstaclesList)
+        {
+            sensor.AddObservation(obstacle.transform.localPosition);
+        }
+        
+        // Give a reward according to the change in distance to the target
+        prevDistance = distance;
+        distance = Vector3.Distance(
+            this.transform.position,
+            target.transform.position
+        );
+        AddReward(prevDistance - distance);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
-        Debug.Log("In Heuristic");
-        isHeuristic = true;
         ActionSegment<float> continuousActionsOut = actionsOut.ContinuousActions;
         // x/z-axes
         continuousActionsOut[0] = Input.GetAxisRaw("Horizontal");
