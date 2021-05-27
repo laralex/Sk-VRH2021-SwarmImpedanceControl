@@ -1,0 +1,29 @@
+{
+    "SwarmBehavior": {
+        "checkpoints": [
+            {
+                "steps": 194789,
+                "file_path": "results\\simple_swarm_stretch2\\SwarmBehavior\\SwarmBehavior-194789.onnx",
+                "reward": null,
+                "creation_time": 1622124092.0514526,
+                "auxillary_file_paths": [
+                    "results\\simple_swarm_stretch2\\SwarmBehavior\\SwarmBehavior-194789.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 194789,
+            "file_path": "results\\simple_swarm_stretch2\\SwarmBehavior.onnx",
+            "reward": null,
+            "creation_time": 1622124092.0514526,
+            "auxillary_file_paths": [
+                "results\\simple_swarm_stretch2\\SwarmBehavior\\SwarmBehavior-194789.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.26.0",
+        "torch_version": "1.8.1+cu102"
+    }
+}

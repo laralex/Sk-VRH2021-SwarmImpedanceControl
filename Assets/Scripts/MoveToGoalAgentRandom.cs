@@ -1,6 +1,8 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Random=UnityEngine.Random;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
@@ -19,6 +21,7 @@ public class MoveToGoalAgentRandom : Agent
     Vector3 agentPosition;
     private GameObject[] drones;
     private Vector2[] desiredDistances;
+    public float maxStretch = 75f;
     private float initDistance;
     private float targetDistance;
     private float prevTargetDistance;
@@ -35,27 +38,31 @@ public class MoveToGoalAgentRandom : Agent
         desiredDistances = this.GetComponent<SwarmController>().desiredDistances;
         initDistance = desiredDistances[1][0];
     }
+
+    private float GetStretch()
+    {
+        float ratio = desiredDistances[1][0] / initDistance;
+        return Mathf.Log(ratio, 2f) * 100f;
+    }
     
     private void SetStretch(float stretch)
     {
-        float alpha = 1f + (stretch / 100f);
-        desiredDistances[0][0] = -initDistance * alpha;
-        desiredDistances[1][0] = initDistance * alpha;
-        desiredDistances[1][1] = initDistance / alpha;
-        desiredDistances[2][0] = initDistance * alpha;
-        desiredDistances[2][1] = -initDistance / alpha;
-        desiredDistances[3][0] = initDistance * alpha;
+        desiredDistances[0][0] = -initDistance * Mathf.Pow(2f, stretch / 100f);
+        desiredDistances[1][0] = initDistance * Mathf.Pow(2f, stretch / 100f);
+        desiredDistances[1][1] = initDistance * Mathf.Pow(2f, -stretch / 100f);
+        desiredDistances[2][0] = initDistance * Mathf.Pow(2f, stretch / 100f);
+        desiredDistances[2][1] = -initDistance * Mathf.Pow(2f, -stretch / 100f);
+        desiredDistances[3][0] = initDistance * Mathf.Pow(2f, stretch / 100f);
     }
 
     private void AddStretch(float stretch)
     {
-        float alpha = 1f + (stretch / 100f);
-        desiredDistances[0][0] *= alpha;
-        desiredDistances[1][0] *= alpha;
-        desiredDistances[1][1] /= alpha;
-        desiredDistances[2][0] *= alpha;
-        desiredDistances[2][1] /= alpha;
-        desiredDistances[3][0] *= alpha;
+        desiredDistances[0][0] *= Mathf.Pow(2f, stretch / 100f); //*= alpha;
+        desiredDistances[1][0] *= Mathf.Pow(2f, stretch / 100f); //*= alpha;
+        desiredDistances[1][1] *= Mathf.Pow(2f, -stretch / 100f); ///= alpha;
+        desiredDistances[2][0] *= Mathf.Pow(2f, stretch / 100f); //*= alpha;
+        desiredDistances[2][1] *= Mathf.Pow(2f, -stretch / 100f); ///= alpha;
+        desiredDistances[3][0] *= Mathf.Pow(2f, stretch / 100f); //*= alpha;
     }
 
     public override void OnEpisodeBegin()
@@ -92,6 +99,7 @@ public class MoveToGoalAgentRandom : Agent
             this.transform.position,
             target.position
         );
+        // targetDistance = Math.Abs(this.transform.position.z - target.position.z);
     }
 
     private void FinishFailure()
@@ -100,12 +108,12 @@ public class MoveToGoalAgentRandom : Agent
         floor.material = loseMaterial;
         EndEpisode();
         counter++;
-        Debug.Log(counter);
+        // Debug.Log(counter);
     }
 
     private void FinishSuccess()
     {
-        SetReward(5.0f);
+        SetReward(10.0f);
         floor.material = winMaterial;
         EndEpisode();
     }
@@ -137,9 +145,9 @@ public class MoveToGoalAgentRandom : Agent
         Vector3 controlSignal = Vector3.zero;
         float stretch;
         controlSignal.x = actionBuffers.ContinuousActions[0];
-        controlSignal.y = actionBuffers.ContinuousActions[1];
-        controlSignal.z = actionBuffers.ContinuousActions[2];
-        stretch = actionBuffers.ContinuousActions[3];
+        controlSignal.y = 0f; // actionBuffers.ContinuousActions[1];
+        controlSignal.z = actionBuffers.ContinuousActions[1]; //[2];
+        stretch = actionBuffers.ContinuousActions[2]; //[3];
 
         // Stretch the swarm
         AddStretch(stretch);
@@ -155,14 +163,14 @@ public class MoveToGoalAgentRandom : Agent
         // Check for drone collisions
         CheckForCollision();
 
-        // Limits of playfield and height
+        // TODO: Change this for colliders
         time += Time.deltaTime;
         if (this.transform.localPosition.x < -2.85f
             || this.transform.localPosition.x > 2.85f
             || this.transform.localPosition.z < -2.85f
             || this.transform.localPosition.z > 2.85f
             || this.transform.localPosition.y < 0.25f
-            || this.transform.localPosition.y > 2f
+            || this.transform.localPosition.y > 0.95f
             || time > 60f)
         {
             FinishFailure();
@@ -191,6 +199,22 @@ public class MoveToGoalAgentRandom : Agent
         sensor.AddObservation(target.localPosition);
         sensor.AddObservation(this.transform.localPosition);
 
+        // Register the swarm geometry
+        float stretch = GetStretch();
+        sensor.AddObservation(stretch);
+
+        // Penalize excessive stretching
+        if (Math.Abs(stretch) > maxStretch)
+        {
+            AddReward(-(Math.Abs(stretch) - maxStretch) / 100f);
+        }
+
+        // foreach (GameObject drone in drones)
+        // {
+        //     sensor.AddObservation(drone.transform.localPosition.x);
+        //     sensor.AddObservation(drone.transform.localPosition.z);
+        // }
+
         // Register the agent velocity
         sensor.AddObservation(rBody.velocity);
 
@@ -200,7 +224,11 @@ public class MoveToGoalAgentRandom : Agent
             this.transform.position,
             target.position
         );
+        // targetDistance = Math.Abs(this.transform.position.z - target.position.z);
         AddReward(prevTargetDistance - targetDistance);
+
+        // Existential penalty
+        AddReward(-0.001f);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -307,12 +335,14 @@ public class MoveToGoalAgentRandom : Agent
     {
         goalPosition = new Vector3(
             Random.Range(-2.5f, 2.5f),
-            Random.Range(0.3f, 0.7f),
+            0.5f,
+            // Random.Range(0.3f, 0.7f),
             Random.Range(-2.25f, -1.75f)
         );
         agentPosition = new Vector3(
             Random.Range(-2f, 2f),
-            Random.Range(0.3f, 0.7f),
+            0.5f,
+            // Random.Range(0.3f, 0.7f),
             Random.Range(1f, 2f)
         );
 

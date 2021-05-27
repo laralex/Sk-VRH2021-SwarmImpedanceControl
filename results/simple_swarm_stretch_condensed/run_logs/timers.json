@@ -1,0 +1,42 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1622134208",
+        "python_version": "3.8.10 (tags/v3.8.10:3d8993a, May  3 2021, 11:48:03) [MSC v.1928 64 bit (AMD64)]",
+        "command_line_arguments": "C:\\Users\\Gabriel\\AppData\\Local\\Programs\\Python\\Python38\\Scripts\\mlagents-learn config/SwarmBehavior.yaml --run-id=simple_swarm_stretch_condensed --force",
+        "mlagents_version": "0.26.0",
+        "mlagents_envs_version": "0.26.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "1.8.1+cu102",
+        "numpy_version": "1.20.3",
+        "end_time_seconds": "1622134269"
+    },
+    "total": 61.6936612,
+    "count": 1,
+    "self": 0.00971789999999828,
+    "children": {
+        "run_training.setup": {
+            "total": 0.11767349999999999,
+            "count": 1,
+            "self": 0.11767349999999999
+        },
+        "TrainerController.start_learning": {
+            "total": 61.5662698,
+            "count": 1,
+            "self": 0.00016730000000109158,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 61.5660615,
+                    "count": 1,
+                    "self": 61.5660615
+                },
+                "TrainerController._save_models": {
+                    "total": 4.0999999995960934e-05,
+                    "count": 1,
+                    "self": 4.0999999995960934e-05
+                }
+            }
+        }
+    }
+}
