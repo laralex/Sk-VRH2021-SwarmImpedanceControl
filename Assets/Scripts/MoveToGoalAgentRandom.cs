@@ -8,166 +8,301 @@ using Unity.MLAgents.Actuators;
 
 public class MoveToGoalAgentRandom : Agent
 {
-    public float speed = 100;
-    public Transform Target;
-    public Transform[] obs;
+    public Transform target;
+    public Transform[] obstacles = new Transform[4];
     public float forceMultiplier = 1f;
-    [SerializeField] private Material win;
-    [SerializeField] private Material lose;
+    [SerializeField] private Material winMaterial;
+    [SerializeField] private Material loseMaterial;
     [SerializeField] private MeshRenderer floor;
+    Rigidbody rBody;
     Vector3 goalPosition;
     Vector3 agentPosition;
+    private GameObject[] drones;
+    private Vector2[] desiredDistances;
+    private float initDistance;
+    private bool hasCollided;
     private int counter = 0;
     private float time = 0;
-    int max = 3; //No. of obstacle
 
-
-    Rigidbody rBody;
     void Start()
     {
         rBody = GetComponent<Rigidbody>();
+
+        // Retrieve swarm variables
+        drones = this.GetComponent<SwarmController>().drones;
+        desiredDistances = this.GetComponent<SwarmController>().desiredDistances;
+        initDistance = desiredDistances[1][0];
+    }
+    
+    private void SetStretch(float stretch)
+    {
+        float alpha = 1f + (stretch / 100f);
+        desiredDistances[0][0] = -initDistance * alpha;
+        desiredDistances[1][0] = initDistance * alpha;
+        desiredDistances[1][1] = initDistance / alpha;
+        desiredDistances[2][0] = initDistance * alpha;
+        desiredDistances[2][1] = -initDistance / alpha;
+        desiredDistances[3][0] = initDistance * alpha;
+    }
+
+    private void AddStretch(float stretch)
+    {
+        float alpha = 1f + (stretch / 100f);
+        desiredDistances[0][0] *= alpha;
+        desiredDistances[1][0] *= alpha;
+        desiredDistances[1][1] /= alpha;
+        desiredDistances[2][0] *= alpha;
+        desiredDistances[2][1] /= alpha;
+        desiredDistances[3][0] *= alpha;
     }
 
     public override void OnEpisodeBegin()
     {
         time = 0;
-        // If the Agent fell, zero its momentum
+
+        // Zero the swarm velocities
         this.rBody.angularVelocity = Vector3.zero;
         this.rBody.velocity = Vector3.zero;
+
+        // Zero the drones velocities
+        foreach (GameObject drone in drones)
+        {
+            drone.transform.rotation = Quaternion.identity;
+            Rigidbody rb = drone.GetComponent<DroneCollisionManager>().rigidbody;
+            rb.angularVelocity = Vector3.zero;
+            rb.velocity = Vector3.zero;
+        }
+
+        // Remove any stretch
+        SetStretch(0);
+
         //this.transform.localPosition = new Vector3(0.33f, 0.5f, 2.54f);
 
+        // Randomize obstacle positions
+        // TODO: Debug that
+        // GenerateObstacle();
 
-        //Randomize Obstacle
-        ObstacleGeneration();
+        // Randomize agent and target positions
+        Populate();
+    }
 
-        // Move the target and agent to a new spot
-        //So that target and agent and obstacle not collide
-        Population();
+    private void FinishFailure()
+    {
+        SetReward(-1.0f);
+        floor.material = loseMaterial;
+        EndEpisode();
+        counter++;
+        Debug.Log(counter);
+    }
+
+    private void FinishSuccess()
+    {
+        SetReward(5.0f);
+        floor.material = winMaterial;
+        EndEpisode();
+    }
+
+    private void CheckForCollision()
+    {
+        bool hasCollided = false;
+        foreach (GameObject drone in drones)
+        {
+            if (drone.GetComponent<DroneCollisionManager>().hasCollided)
+            {
+                hasCollided = true;
+                FinishFailure();
+                break;
+            }
+        }
+        // Reset drone collision markers
+        if (hasCollided)
+        {
+            foreach (GameObject drone in drones)
+            {
+                drone.GetComponent<DroneCollisionManager>().hasCollided = false;
+            }
+        }
     }
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
-
-
-        // Actions, size = 2
         Vector3 controlSignal = Vector3.zero;
+        float stretch;
         controlSignal.x = actionBuffers.ContinuousActions[0];
         controlSignal.y = actionBuffers.ContinuousActions[1];
         controlSignal.z = actionBuffers.ContinuousActions[2];
+        stretch = actionBuffers.ContinuousActions[3];
 
-        //rBody.mass* Physics.gravity.magnitude = hovering case
-        //rBody.mass* Physics.gravity.magnitude + controlSignal.y * forceMultiplier = Thrust case
+        // Stretch the swarm
+        AddStretch(stretch);
 
-        rBody.AddForce(controlSignal.x * forceMultiplier, rBody.mass * Physics.gravity.magnitude, controlSignal.z * forceMultiplier, ForceMode.Force);
+        // Move the swarm
+        rBody.AddForce(
+            controlSignal.x * forceMultiplier,
+            controlSignal.y * forceMultiplier, // rBody.mass * Physics.gravity.magnitude,
+            controlSignal.z * forceMultiplier,
+            ForceMode.Force
+        );
 
-        // Moving to target
-        //float distanceToTarget = Vector3.Distance(this.transform.localPosition, Target.localPosition);
+        // Check for drone collisions
+        CheckForCollision();
+
+        // Limits of playfield and height
         time += Time.deltaTime;
-
-        //Limits of playfield and height
-        if (this.transform.localPosition.x < -2.85f || this.transform.localPosition.x > 2.85f || this.transform.localPosition.z < -2.85f || this.transform.localPosition.z > 2.85f || this.transform.localPosition.y < 0.25f || this.transform.localPosition.y > 2f || time > 60f)
+        if (this.transform.localPosition.x < -2.85f
+            || this.transform.localPosition.x > 2.85f
+            || this.transform.localPosition.z < -2.85f
+            || this.transform.localPosition.z > 2.85f
+            || this.transform.localPosition.y < 0.25f
+            || this.transform.localPosition.y > 2f
+            || time > 60f)
         {
-            SetReward(-1.0f);
-            floor.material = lose;
-            EndEpisode();
-            counter++;
-            Debug.Log(counter);
+            FinishFailure();
         }
     }
 
-    //rewards
-    //We want to add more policy here to fasten the training process
-    //The main reward and failure
     private void OnTriggerEnter(Collider other)
     {
         if (other.gameObject.tag == "Goal")
         {
-            SetReward(5.0f);
-            floor.material = win;
-            EndEpisode();
+            FinishSuccess();
         }
-
-        if (other.gameObject.tag == "Obstacle")
-        {
-            SetReward(-1.0f);
-            floor.material = lose;
-            EndEpisode();
-            counter++;
-            Debug.Log(counter);
-        }
-
+        // Obstacle collision detection is delegated to drones
+        // else if (other.gameObject.tag == "Obstacle")
+        // {
+        //     FinishFailure();
+        // }
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Target and Agent positions
-        sensor.AddObservation(Target.localPosition);
+        // Stabilize the swarm controller
+        this.rBody.transform.rotation = Quaternion.identity;
+
+        // Register the target and agent positions
+        sensor.AddObservation(target.localPosition);
         sensor.AddObservation(this.transform.localPosition);
 
-        // Agent velocity
-        sensor.AddObservation(rBody.velocity.x);
-        sensor.AddObservation(rBody.velocity.y);
-        sensor.AddObservation(rBody.velocity.z);
+        // Register the agent velocity
+        sensor.AddObservation(rBody.velocity);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var continuousActionsOut = actionsOut.ContinuousActions;
-        continuousActionsOut[0] = -Input.GetAxis("Horizontal");
-        continuousActionsOut[2] = -Input.GetAxis("Vertical");
-    }
-    private void ObstacleGeneration()
-    {
-            bool obsspawned = false;
-            while (!obsspawned)
-            {
-       
-                Vector3 obs1 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
-                Vector3 obs2 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
-                Vector3 obs3 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
-                Vector3 obs4 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
 
-                if ((obs1 - obs2).magnitude < 1.5 || (obs1 - obs3).magnitude < 1.5 || (obs1 - obs4).magnitude < 1.5 || (obs2 - obs3).magnitude < 1.5 || (obs2 - obs4).magnitude < 1.5 || (obs3 - obs4).magnitude < 1.5)
-                {
-                    continue;
-                }
-                else
-                {
-                    obs[0].localPosition = obs1;
-                    obs[1].localPosition = obs2;
-                    obs[2].localPosition = obs3;
-                    obs[3].localPosition = obs4;
-                    obsspawned = true;
-                }
-            }
-           
-        }
-    
-    private void Population()
-    {
-        bool goalspawned = false;
-    while (!goalspawned)
-    {
-        goalPosition = new Vector3(Random.Range(-2.75f, 2.75f),
-                                          0.5f,
-                                           Random.Range(-2.75f, -1f));
-        agentPosition = new Vector3(Random.Range(-2.65f, 2.65f), 0.5f, Random.Range(-2.65f, 2.65f));
-        for (int i = 0; i < max; i++)
+        // Control x/z-axes movements
+        continuousActionsOut[0] = Input.GetAxisRaw("Horizontal");
+        continuousActionsOut[2] = Input.GetAxisRaw("Vertical");
+
+        // Control y-axis movements
+        if (Input.GetKey(KeyCode.LeftShift))
         {
-            if ((goalPosition - obs[i].localPosition).magnitude < 2 || (agentPosition - obs[i].localPosition).magnitude < 2)
+            continuousActionsOut[1] = 1;
+        }
+        else if (Input.GetKey(KeyCode.LeftControl))
+        {
+            continuousActionsOut[1] = -1;
+        }
+        else
+        {
+            continuousActionsOut[1] = 0f;
+        }
+
+        // Control swarm deformations
+        if (Input.GetKey(KeyCode.C))
+        {
+            continuousActionsOut[3] = 1;
+        }
+        else if (Input.GetKey(KeyCode.V))
+        {
+            continuousActionsOut[3] = -1;
+        }
+        else
+        {
+            continuousActionsOut[3] = 0f;
+        }
+    }
+
+    private void GenerateObstacle()
+    {
+        bool obstaclesSpawned = false;
+        while (!obstaclesSpawned)
+        {
+            Vector3 obs1 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
+            Vector3 obs2 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
+            Vector3 obs3 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
+            Vector3 obs4 = new Vector3(Random.Range(-2.25f, 2.25f), 0.5f, Random.Range(-2.25f, 2.25f));
+
+            if ((obs1 - obs2).magnitude < 1.5
+                || (obs1 - obs3).magnitude < 1.5
+                || (obs1 - obs4).magnitude < 1.5
+                || (obs2 - obs3).magnitude < 1.5
+                || (obs2 - obs4).magnitude < 1.5
+                || (obs3 - obs4).magnitude < 1.5)
             {
                 continue;
             }
             else
             {
-                Target.localPosition = goalPosition;
-                this.transform.localPosition = agentPosition;
-                goalspawned = true;
+                obstacles[0].localPosition = obs1;
+                obstacles[1].localPosition = obs2;
+                obstacles[2].localPosition = obs3;
+                obstacles[3].localPosition = obs4;
+                obstaclesSpawned = true;
             }
         }
     }
-    }
+    
+    // TODO: Debug
+    // private void Populate()
+    // {
+    //     bool goalspawned = false;
+    //     while (!goalspawned)
+    //     {
+    //         goalPosition = new Vector3(
+    //             Random.Range(-2.75f, 2.75f),
+    //             Random.Range(0.3f, 0.7f),
+    //             Random.Range(-2.75f, -1f)
+    //         );
+    //         agentPosition = new Vector3(
+    //             Random.Range(-2f, 2f),
+    //             Random.Range(0.3f, 0.7f),
+    //             Random.Range(1f, 2f)
+    //         );
+    //         foreach (Transform obstacle in obstacles)
+    //         {
+    //             if ((goalPosition - obstacle.localPosition).magnitude < 2
+    //                 || (agentPosition - obstacle.localPosition).magnitude < 2)
+    //             {
+    //                 continue;
+    //             }
+    //             else
+    //             {
+    //                 target.localPosition = goalPosition;
+    //                 this.transform.localPosition = agentPosition;
+    //                 goalspawned = true;
+    //             }
+    //         }
+    //     }
+    // }
+    // Simplified version
+    private void Populate()
+    {
+        goalPosition = new Vector3(
+            Random.Range(-2.5f, 2.5f),
+            Random.Range(0.3f, 0.7f),
+            Random.Range(-2.25f, -1.75f)
+        );
+        agentPosition = new Vector3(
+            Random.Range(-2f, 2f),
+            Random.Range(0.3f, 0.7f),
+            Random.Range(1f, 2f)
+        );
 
+        target.localPosition = goalPosition;
+        this.transform.localPosition = agentPosition;
+    }
 }
 
 

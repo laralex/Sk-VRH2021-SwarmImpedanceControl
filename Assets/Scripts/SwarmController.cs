@@ -100,8 +100,9 @@ public class SwarmController : MonoBehaviour
     }
 
     void RotateSwarm(float eulerYaw) {
-        SwarmCentroid?.Rotate(0f, eulerYaw, 0f);
+        // SwarmCentroid?.Rotate(0f, eulerYaw, 0f);
     }
+
     ImpedanceController SetupLink(ImpedanceController link, Transform obstacle, bool logs=false) 
     {
         link.printLogs = logs;

@@ -10,20 +10,17 @@ public class MoveToGoalAgent : Agent
 {
     public float speed = 100;
     public Transform Target;
-    public Transform Ref;
     public Transform[] obs;
     public float forceMultiplier = 0.01f;
-    [SerializeField] private Material win;
-    [SerializeField] private Material close;
-    [SerializeField] private Material lose;
+    [SerializeField] private Material winMaterial;
+    [SerializeField] private Material loseMaterial;
     [SerializeField] private MeshRenderer floor;
     Vector3 goalPosition;
     private int counter = 0;
     private float time = 0;
     //private float prevDistance;
-
-
     Rigidbody rBody;
+
     void Start()
     {
         rBody = GetComponent<Rigidbody>();
@@ -38,8 +35,6 @@ public class MoveToGoalAgent : Agent
         this.transform.localPosition = new Vector3(0.33f, 0.5f, 2.54f);
         //float prevDistance = Vector3.Distance(this.transform.position, Target.transform.position);
 
-
-
         //Target.localPosition = new Vector3(-1.5f, 0.54f, -1.54f);
         // Move the target to a new spot
         //So that target and obstacle not collide
@@ -47,10 +42,16 @@ public class MoveToGoalAgent : Agent
         bool goalspawned = false;
         while (!goalspawned)
         {
-            goalPosition = new Vector3(Random.Range(-2.75f, 2.75f),
-                                              Random.Range(0.5f, 0.6f),
-                                               Random.Range(-2.75f, 2.75f));
-            if ((goalPosition - obs[0].localPosition).magnitude < 1 || (goalPosition - obs[1].localPosition).magnitude < 1 || (goalPosition - obs[2].localPosition).magnitude < 1 || (goalPosition - obs[3].localPosition).magnitude < 1)
+            goalPosition = new Vector3(
+                Random.Range(-2.75f, 2.75f),
+                Random.Range(0.5f, 0.6f),
+                Random.Range(-2.75f, 2.75f)
+            );
+
+            if ((goalPosition - obs[0].localPosition).magnitude < 1
+                || (goalPosition - obs[1].localPosition).magnitude < 1
+                || (goalPosition - obs[2].localPosition).magnitude < 1
+                || (goalPosition - obs[3].localPosition).magnitude < 1)
             {
                 continue;
             }
@@ -64,6 +65,22 @@ public class MoveToGoalAgent : Agent
         //obs[0].localPosition = new Vector3(Random.Range(-2.5f, 2.5f), 0.5f, -0.5f);
         //Debug.Log(prevDistance);
     }
+    
+    private void FinishFailure()
+    {
+        SetReward(-1.0f);
+        floor.material = loseMaterial;
+        EndEpisode();
+        counter++;
+        Debug.Log(counter);
+    }
+
+    private void FinishSuccess()
+    {
+        SetReward(5.0f);
+        floor.material = winMaterial;
+        EndEpisode();
+    }
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
@@ -75,20 +92,27 @@ public class MoveToGoalAgent : Agent
         //rBody.mass* Physics.gravity.magnitude = hovering case
         //rBody.mass* Physics.gravity.magnitude + controlSignal.y * forceMultiplier = Thrust case
 
-        rBody.AddForce(controlSignal.x * forceMultiplier, rBody.mass * Physics.gravity.magnitude + controlSignal.y * 0.25f * forceMultiplier, controlSignal.z * forceMultiplier, ForceMode.Force);
+        rBody.AddForce(
+            controlSignal.x * forceMultiplier,
+            rBody.mass * Physics.gravity.magnitude + controlSignal.y * 0.25f * forceMultiplier,
+            controlSignal.z * forceMultiplier, ForceMode.Force
+        );
 
         // Moving to target
         //float distanceToTarget = Vector3.Distance(this.transform.localPosition, Target.localPosition);
         time += Time.deltaTime;
 
         //Limits of playfield and height
-        if (this.transform.localPosition.x < -2.85f || this.transform.localPosition.x > 2.85f || this.transform.localPosition.z < -2.85f || this.transform.localPosition.z > 2.85f || this.transform.localPosition.y < 0.25f || this.transform.localPosition.y > 0.75f || time > 60f)
+        if (this.transform.localPosition.x < -2.85f
+            || this.transform.localPosition.x > 2.85f
+            || this.transform.localPosition.z < -2.85f
+            || this.transform.localPosition.z > 2.85f
+            || this.transform.localPosition.y < 0.25f
+            || this.transform.localPosition.y > 0.75f
+            || time > 60f)
         {
-            SetReward(-1.0f);
-            floor.material = lose;
-            EndEpisode();
+            FinishFailure();
         }
-
     }
 
     //rewards
@@ -98,20 +122,13 @@ public class MoveToGoalAgent : Agent
     {
         if (other.gameObject.tag == "Goal")
         {
-            SetReward(5.0f);
-            floor.material = win;
-            EndEpisode();
-            Debug.Log("Yes");
+            FinishSuccess();
         }
-
-        if (other.gameObject.tag == "Obstacle")
+        else if (other.gameObject.tag == "Obstacle")
         {
-            SetReward(-0.5f);
-            floor.material = lose;
-            EndEpisode();
+            FinishFailure();
         }
     }
-
 
     public override void CollectObservations(VectorSensor sensor)
     {
@@ -120,29 +137,29 @@ public class MoveToGoalAgent : Agent
         sensor.AddObservation(this.transform.localPosition);
 
         // Agent velocity
-        sensor.AddObservation(rBody.velocity.x);
-        sensor.AddObservation(rBody.velocity.y);
-        sensor.AddObservation(rBody.velocity.z);
-
-
-        
-
+        sensor.AddObservation(rBody.velocity);
+        // sensor.AddObservation(rBody.velocity.x);
+        // sensor.AddObservation(rBody.velocity.y);
+        // sensor.AddObservation(rBody.velocity.z);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var continuousActionsOut = actionsOut.ContinuousActions;
-        continuousActionsOut[0] = -Input.GetAxis("Horizontal");
-        continuousActionsOut[2] = -Input.GetAxis("Vertical");
-        if (Input.GetKey(KeyCode.W))
+        continuousActionsOut[0] = Input.GetAxisRaw("Horizontal");
+        continuousActionsOut[2] = Input.GetAxisRaw("Vertical");
+        if (Input.GetKey(KeyCode.LeftShift))
         {
             continuousActionsOut[1] = 1;
         }
-        else if (Input.GetKey(KeyCode.S))
+        else if (Input.GetKey(KeyCode.LeftControl))
         {
             continuousActionsOut[1] = -1;
         }
-         
+        else
+        {
+            continuousActionsOut[1] = 0f;
+        }
     }
 }
 
