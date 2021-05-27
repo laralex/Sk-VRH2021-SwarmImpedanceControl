@@ -20,6 +20,8 @@ public class MoveToGoalAgentRandom : Agent
     private GameObject[] drones;
     private Vector2[] desiredDistances;
     private float initDistance;
+    private float targetDistance;
+    private float prevTargetDistance;
     private bool hasCollided;
     private int counter = 0;
     private float time = 0;
@@ -84,6 +86,12 @@ public class MoveToGoalAgentRandom : Agent
 
         // Randomize agent and target positions
         Populate();
+
+        // Compute the initial distance to the target
+        targetDistance = Vector3.Distance(
+            this.transform.position,
+            target.position
+        );
     }
 
     private void FinishFailure()
@@ -185,6 +193,14 @@ public class MoveToGoalAgentRandom : Agent
 
         // Register the agent velocity
         sensor.AddObservation(rBody.velocity);
+
+        // Give a reward according to the change in distance to the target
+        prevTargetDistance = targetDistance;
+        targetDistance = Vector3.Distance(
+            this.transform.position,
+            target.position
+        );
+        AddReward(prevTargetDistance - targetDistance);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
